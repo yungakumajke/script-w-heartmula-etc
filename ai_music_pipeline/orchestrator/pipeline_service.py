@@ -10,6 +10,7 @@ import sys
 from ensure_heartmula import ensure_heartmula
 from heartmula_runner import run_heartmula
 from uvr_runner import run_uvr
+from reaper_mixer import create_reaper_project_from_stems
 
 load_dotenv()
 
@@ -71,8 +72,10 @@ def generate():
     job_dir = JOBS_DIR / name
     source_dir = job_dir / "source"
     stems_dir = job_dir / "stems"
+    mixed_dir = job_dir / "mixed"
     source_dir.mkdir(parents=True, exist_ok=True)
     stems_dir.mkdir(parents=True, exist_ok=True)
+    mixed_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("New job: %s", name)
     log.info("Prompt: %s", prompt)
@@ -99,6 +102,16 @@ def generate():
 
         found = rename_stems(stems_dir)
 
+        log.info("Found stems: %s", list(found.keys()))
+
+        output_mix_path = mixed_dir / "mix.wav"
+        try:
+            create_reaper_project_from_stems(stems_dir, output_mix_path)
+        except Exception as e:
+            log.warning("REAPER integration failed: %s", e)
+            log.warning("Continuing without REAPER mix")
+            output_mix_path = None
+
         meta = {
             "name": name,
             "prompt": prompt,
@@ -107,11 +120,18 @@ def generate():
             "status": "ok",
             "source_audio": str(source_audio),
             "stems_dir": str(stems_dir),
-            "found_stems": {k: str(v) for k, v in found.items()}
+            "found_stems": {k: str(v) for k, v in found.items()},
+            "mix_path": str(output_mix_path) if output_mix_path else None,
         }
         save_json(job_dir / "meta.json", meta)
 
-        return jsonify({"status": "ok", "job": name, "dir": str(job_dir), "found_stems": meta["found_stems"]})
+        return jsonify({
+            "status": "ok",
+            "job": name,
+            "dir": str(job_dir),
+            "found_stems": meta["found_stems"],
+            "mix_path": meta["mix_path"],
+        })
 
     except Exception as e:
         log.exception("Job failed: %s", name)
